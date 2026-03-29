@@ -2,10 +2,16 @@
 error_reporting(0);
 ini_set('display_errors', 0);
 
-// CRITICAL: These 3 lines allow the player to read the redirect
+// Allow any player to read this response
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Headers: *");
+header("Access-Control-Expose-Headers: Location");
+
+// If the player sends an OPTIONS request (Preflight), stop here
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    exit;
+}
 
 $url = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
 
@@ -21,9 +27,11 @@ $res = curl_exec($ch);
 
 if (preg_match('/src="([^"]+)"/', $res, $m)) {
     $final_link = str_replace('&amp;', '&', $m[1]);
-    header("Location: " . $final_link);
+    
+    // REDIRECT with 307 (Temporary Redirect) is better for CORS
+    header("Location: " . $final_link, true, 307);
     exit;
 } else {
     http_response_code(500);
-    echo "ERROR: Token extraction failed.";
+    echo "ERROR: Akamai Token not found.";
 }
