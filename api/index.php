@@ -1,0 +1,57 @@
+<?php
+// go.php - The "True" Elahmad Server-Side Proxy
+header('Access-Control-Allow-Origin: *');
+
+// 1. DYNAMIC TOKEN GENERATION
+// We fetch the SMIL from thePlatform to get the fresh 'hdntl' token
+$smil_url = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
+
+function fetch_content($url) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    
+    // THE SECRET: ELAMAD'S BROWSER FINGERPRINT
+    // This forces PHP to use the same encryption patterns as a real browser
+    curl_setopt($ch, CURLOPT_SSL_CIPHER_LIST, 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384');
+    
+    $headers = [
+        "Host: " . parse_url($url, PHP_URL_HOST),
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0",
+        "Accept: */*",
+        "Accept-Language: en-US,en;q=0.5",
+        "Origin: https://www.dubaiplus.net",
+        "Referer: https://www.dubaiplus.net/",
+        "Connection: keep-alive",
+        "TE: trailers"
+    ];
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    
+    $res = curl_exec($ch);
+    curl_close($ch);
+    return $res;
+}
+
+// 2. GET THE TOKENIZED URL
+$smil_data = fetch_content($smil_url);
+preg_match('/src="([^"]+hdntl=[^"]+)"/', $smil_data, $matches);
+
+if (!$matches) {
+    // If your server is hard-blocked, we use the fallback URL you provided in the log
+    $manifest_url = "https://dmi-live-a.akamaized.net/Content/Channel/dubaisports1/DASH/master.mpd?hdntl=exp=1774888418~acl=/*~data=hdntl~hmac=0859a41a995b76bcc4f49970b25b9dd423e656efea920ea8baa8fb115447bff2";
+} else {
+    $manifest_url = str_replace('&amp;', '&', $matches[1]);
+}
+
+// 3. FETCH AND REWRITE THE MANIFEST
+$manifest_data = fetch_content($manifest_url);
+
+// Fix the chunks (so they go back to Akamai with the token)
+$base_url = substr($manifest_url, 0, strrpos($manifest_url, '/') + 1);
+$manifest_data = str_replace('media="', 'media="' . $base_url, $manifest_data);
+$manifest_data = str_replace('initialization="', 'initialization="' . $base_url, $manifest_data);
+
+header('Content-Type: application/dash+xml');
+echo $manifest_data;
