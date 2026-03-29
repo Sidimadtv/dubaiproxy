@@ -1,40 +1,34 @@
 <?php
-// Force silence - absolutely no warnings allowed to print
 error_reporting(0);
 ini_set('display_errors', 0);
 
+// 1. Mandatory CORS Headers for 2026
 header("Access-Control-Allow-Origin: *");
-header("Content-Type: application/dash+xml");
+header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Headers: *");
+header("Access-Control-Expose-Headers: *");
+header("Referrer-Policy: no-referrer");
 
-$gateway = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { exit; }
 
-// Fetch the SMIL
-$ch = curl_init($gateway);
+$url = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
+
+$ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0'
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149.0.0.0'
 ]);
-$smil = curl_exec($ch);
 
-if (preg_match('/src="([^"]+)"/', $smil, $m)) {
-    $mpd_url = str_replace('&amp;', '&', $m[1]);
-    
-    // Fetch the MPD
-    $ch2 = curl_init($mpd_url);
-    curl_setopt_array($ch2, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0'
-    ]);
-    $mpd_content = curl_exec($ch2);
+$res = curl_exec($ch);
 
-    // Fix the "Relative Path" issue by telling the player where Akamai lives
-    $base_url = explode('?', $mpd_url)[0];
-    $base_path = substr($base_url, 0, strrpos($base_url, '/') + 1);
-    
-    // Inject BaseURL so segments load from Akamai, not Vercel
-    $mpd_content = str_replace('<Period', '<BaseURL>' . $base_path . '</BaseURL><Period', $mpd_content);
-
-    echo $mpd_content;
+if (preg_match('/src="([^"]+)"/', $res, $m)) {
+    $final_link = str_replace('&amp;', '&', $m[1]);
+    // 302 is more compatible with Shaka Player's redirect logic
+    header("Location: " . $final_link, true, 302);
+    exit;
+} else {
+    http_response_code(500);
+    echo "ERROR_SOURCE_UNREACHABLE";
 }
-// No curl_close here - PHP 8.5 will clean it up automatically
