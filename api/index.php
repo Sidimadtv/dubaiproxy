@@ -1,9 +1,11 @@
 <?php
-// 1. Prevent any warnings from leaking and breaking the redirect
 error_reporting(0);
 ini_set('display_errors', 0);
 
-header('Access-Control-Allow-Origin: *');
+// CRITICAL: These 3 lines allow the player to read the redirect
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 
 $url = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
 
@@ -17,12 +19,8 @@ curl_setopt_array($ch, [
 
 $res = curl_exec($ch);
 
-// 2. Removed curl_close($ch); as it is deprecated in PHP 8.5+
-
 if (preg_match('/src="([^"]+)"/', $res, $m)) {
     $final_link = str_replace('&amp;', '&', $m[1]);
-    
-    // 3. The Redirect
     header("Location: " . $final_link);
     exit;
 } else {
