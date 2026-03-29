@@ -2,12 +2,10 @@
 error_reporting(0);
 ini_set('display_errors', 0);
 
-// 1. Mandatory CORS Headers for 2026
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: *");
 header("Access-Control-Expose-Headers: *");
-header("Referrer-Policy: no-referrer");
 
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { exit; }
 
@@ -25,10 +23,10 @@ $res = curl_exec($ch);
 
 if (preg_match('/src="([^"]+)"/', $res, $m)) {
     $final_link = str_replace('&amp;', '&', $m[1]);
-    // 302 is more compatible with Shaka Player's redirect logic
+    // 302 Redirect is the standard for MPD handshakes
     header("Location: " . $final_link, true, 302);
     exit;
 } else {
     http_response_code(500);
-    echo "ERROR_SOURCE_UNREACHABLE";
+    echo "ERROR_NO_TOKEN";
 }
