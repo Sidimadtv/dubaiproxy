@@ -1,32 +1,34 @@
 <?php
-error_reporting(0);
-ini_set('display_errors', 0);
-
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, OPTIONS");
-header("Access-Control-Allow-Headers: *");
-header("Access-Control-Expose-Headers: *");
+header("Content-Type: application/dash+xml");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { exit; }
+// 1. Fetch the Tokenized URL from thePlatform
+$gateway = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
+$ch = curl_init($gateway);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0');
+$smil = curl_exec($ch);
+curl_close($ch);
 
-$url = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
+if (preg_match('/src="([^"]+)"/', $smil, $m)) {
+    $mpd_url = str_replace('&amp;', '&', $m[1]);
+    
+    // 2. Fetch the actual MPD content
+    $ch2 = curl_init($mpd_url);
+    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0');
+    $mpd_content = curl_exec($ch2);
+    curl_close($ch2);
 
-$ch = curl_init($url);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149.0.0.0'
-]);
+    // 3. Fix Relative Links: Make segments point back to Akamai directly
+    // This bypasses the IP-binding issue by "baking" the base URL into the manifest
+    $base_url = explode('?', $mpd_url)[0];
+    $base_path = substr($base_url, 0, strrpos($base_url, '/') + 1);
+    
+    $mpd_content = str_replace('<Period', '<BaseURL>' . $base_path . '</BaseURL><Period', $mpd_content);
 
-$res = curl_exec($ch);
-
-if (preg_match('/src="([^"]+)"/', $res, $m)) {
-    $final_link = str_replace('&amp;', '&', $m[1]);
-    // 302 Redirect is the standard for MPD handshakes
-    header("Location: " . $final_link, true, 302);
-    exit;
+    echo $mpd_content;
 } else {
-    http_response_code(500);
-    echo "ERROR_NO_TOKEN";
+    echo "ERROR: Could not generate stream.";
 }
