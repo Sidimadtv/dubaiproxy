@@ -1,41 +1,51 @@
 <?php
 error_reporting(0);
+ini_set('display_errors', 0);
+
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Allow-Headers: *");
 
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') { exit; }
 
-// 1. Get the source SMIL
+// Check if we are requesting a specific video segment
+if (isset($_GET['ts'])) {
+    $segmentUrl = base64_decode($_GET['ts']);
+    $ch = curl_init($segmentUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149.0.0.0');
+    $data = curl_exec($ch);
+    
+    // Set correct headers for video/audio chunks
+    if (strpos($segmentUrl, '.m4a') !== false) header("Content-Type: audio/mp4");
+    else header("Content-Type: video/mp4");
+    
+    echo $data;
+    exit;
+}
+
+// Otherwise, fetch the Manifest
 $gateway = "https://link.theplatform.eu/s/dmimain/media/dmi-prod-live-media-dubaisports1?format=SMIL&formats=MPEG-DASH";
 $ch = curl_init($gateway);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0'
-]);
-$smil = curl_exec($ch);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+$res = curl_exec($ch);
 
-if (preg_match('/src="([^"]+)"/', $smil, $m)) {
+if (preg_match('/src="([^"]+)"/', $res, $m)) {
     $mpd_url = str_replace('&amp;', '&', $m[1]);
-    
-    // 2. Fetch the actual MPD content
-    curl_setopt($ch, CURLOPT_URL, $mpd_url);
-    $mpd_data = curl_exec($ch);
+    $mpd_data = file_get_contents($mpd_url);
 
-    // 3. Extract the Akamai Token and Base Path
-    $query_string = parse_url($mpd_url, PHP_URL_QUERY);
-    $base_path = substr($mpd_url, 0, strrpos(explode('?', $mpd_url)[0], '/') + 1);
+    $base_url = explode('?', $mpd_url)[0];
+    $base_path = substr($base_url, 0, strrpos($base_url, '/') + 1);
+    $token = explode('?', $mpd_url)[1];
 
-    // 4. Inject the BaseURL and Token into the Manifest
-    // This tells the player: "Load segments from Akamai, but use THIS token."
-    $injection = "<BaseURL>" . $base_path . "</BaseURL>";
-    $mpd_data = str_replace('<Period', $injection . '<Period', $mpd_data);
+    // THE MAGIC: Rewrite the manifest so EVERY segment goes through YOUR Vercel proxy
+    $proxy_root = "https://" . $_SERVER['HTTP_HOST'] . "/api/index.php?ts=";
     
-    // Fix the segment template to include the token on every request
-    $mpd_data = str_replace('.m4v', '.m4v?' . $query_string, $mpd_data);
-    $mpd_data = str_replace('.m4a', '.m4a?' . $query_string, $mpd_data);
-    $mpd_data = str_replace('.m4i', '.m4i?' . $query_string, $mpd_data);
+    // We encode the full Akamai URL for each segment into a Base64 string for our proxy
+    $mpd_data = str_replace('$RepresentationID$/', $proxy_root . base64_encode($base_path . '$RepresentationID$/'), $mpd_data);
 
     header("Content-Type: application/dash+xml");
     echo $mpd_data;
